@@ -1,0 +1,421 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>News Reader Application</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f3f6fb;
+  color: #172033;
+}
+header {
+  background: #2457a7;
+  color: white;
+  padding: 20px;
+  text-align: center;
+}
+nav {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 15px;
+}
+button {
+  padding: 11px 17px;
+  border: none;
+  border-radius: 7px;
+  background: #2457a7;
+  color: white;
+  cursor: pointer;
+}
+button:hover {
+  background: #153d7b;
+}
+.container {
+  max-width: 950px;
+  margin: auto;
+  padding: 15px;
+}
+.categories {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 0;
+}
+.categories button {
+  white-space: nowrap;
+}
+.card {
+  background: white;
+  padding: 18px;
+  margin: 12px 0;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px #0001;
+}
+.card h3 {
+  color: #2457a7;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 15px;
+}
+input, textarea {
+  width: 100%;
+  padding: 12px;
+  margin: 10px 0;
+  border: 1px solid #aaa;
+  border-radius: 7px;
+}
+textarea {
+  height: 130px;
+}
+.hidden {
+  display: none;
+}
+small {
+  color: #666;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <h1>📰 Daily News Reader</h1>
+  <p>Stay Updated With Latest News</p>
+</header>
+
+<nav>
+  <button onclick="showScreen('news')">Latest News</button>
+  <button onclick="showScreen('bookmarks')">Bookmarks</button>
+</nav>
+
+<div class="container">
+
+<!-- SCREEN 1: NEWS LIST -->
+<section id="news">
+  <h2>Latest News</h2>
+  <div class="categories" id="categories"></div>
+  <button onclick="loadNews()">Refresh News</button>
+  <div id="newsList">Loading news...</div>
+</section>
+
+<!-- SCREEN 2: ARTICLE DETAILS -->
+<section id="details" class="hidden">
+  <button onclick="showScreen('news')">Back</button>
+  <div id="articleDetails"></div>
+</section>
+
+<!-- SCREEN 3: PERSONAL NOTES FORM -->
+<section id="notes" class="hidden">
+  <button onclick="showScreen('details')">Back</button>
+  <h2>Personal Notes Form</h2>
+  <form id="noteForm">
+    <label>Enter Your Notes</label>
+    <textarea id="noteText"
+      minlength="5"
+      maxlength="500"
+      required
+      placeholder="Write your notes here..."></textarea>
+    <button type="submit">Save Note</button>
+  </form>
+</section>
+
+<!-- SCREEN 4: BOOKMARKS -->
+<section id="bookmarks" class="hidden">
+  <h2>Saved Articles</h2>
+  <div id="savedList"></div>
+</section>
+
+</div>
+
+<script>
+const categories = [
+  "Top stories", "World", "India", "Business",
+  "Technology", "Sports", "Entertainment",
+  "Science", "Health"
+];
+
+const topics = {
+  "Top stories": "",
+  "World": "WORLD",
+  "India": "NATION",
+  "Business": "BUSINESS",
+  "Technology": "TECHNOLOGY",
+  "Sports": "SPORTS",
+  "Entertainment": "ENTERTAINMENT",
+  "Science": "SCIENCE",
+  "Health": "HEALTH"
+};
+
+let articles = [];
+let currentArticle = null;
+let currentCategory = "Top stories";
+
+let bookmarks = JSON.parse(
+  localStorage.getItem("bookmarks") || "[]"
+);
+
+let notes = JSON.parse(
+  localStorage.getItem("personalNotes") || "{}"
+);
+
+function showScreen(screen) {
+  ["news", "details", "notes", "bookmarks"]
+    .forEach(id => {
+      document.getElementById(id).classList.add("hidden");
+    });
+
+  document.getElementById(screen).classList.remove("hidden");
+
+  if (screen === "bookmarks") {
+    displayBookmarks();
+  }
+}
+
+function displayCategories() {
+  document.getElementById("categories").innerHTML =
+    categories.map(category =>
+      `<button onclick="selectCategory('${category}')">
+        ${category}
+      </button>`
+    ).join("");
+}
+
+function selectCategory(category) {
+  currentCategory = category;
+  loadNews();
+}
+
+async function loadNews() {
+  const list = document.getElementById("newsList");
+  list.innerHTML = "<p>Loading news...</p>";
+
+  const topic = topics[currentCategory];
+
+  const rss = topic
+    ? `https://news.google.com/rss/headlines/section/topic/${topic}?hl=en-IN&gl=IN&ceid=IN:en`
+    : "https://news.google.com/rss?hl=en-IN&gl=IN&ceid=IN:en";
+
+  const url = "https://api.rss2json.com/v1/api.json?rss_url="
+    + encodeURIComponent(rss);
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Network error");
+
+    const data = await response.json();
+    if (data.status !== "ok") throw new Error("Feed error");
+
+    articles = data.items.map((item, index) => ({
+      id: item.guid || item.link || String(index),
+      title: item.title,
+      source: item.author || "Google News",
+      date: item.pubDate || "",
+      description: stripHTML(item.description || ""),
+      url: item.link || "",
+      category: currentCategory
+    }));
+
+    displayNews();
+
+  } catch (error) {
+    list.innerHTML = `
+      <div class="card">
+        <h3>Unable to Load News</h3>
+        <p>Please check your internet connection.</p>
+        <button onclick="loadNews()">Retry</button>
+      </div>`;
+  }
+}
+
+function stripHTML(text) {
+  const doc = new DOMParser().parseFromString(text, "text/html");
+  return doc.body.textContent || "";
+}
+
+function safe(text) {
+  return String(text).replace(/[&<>"']/g, char => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[char]);
+}
+
+function displayNews() {
+  const list = document.getElementById("newsList");
+
+  if (articles.length === 0) {
+    list.innerHTML = "<p>No articles available.</p>";
+    return;
+  }
+
+  list.innerHTML = '<div class="grid">' +
+    articles.map((article, index) => `
+      <div class="card">
+        <small>${safe(article.category)}</small>
+        <h3>${safe(article.title)}</h3>
+        <p>${safe(article.source)}</p>
+        <small>${safe(article.date)}</small>
+        <br><br>
+        <button onclick="openDetails(${index})">
+          Read More
+        </button>
+        <button onclick="toggleBookmark(${index})">
+          ${isSaved(article) ? "★ Saved" : "☆ Bookmark"}
+        </button>
+      </div>
+    `).join("") + "</div>";
+}
+
+function openDetails(index) {
+  currentArticle = articles[index];
+
+  document.getElementById("articleDetails").innerHTML = `
+    <div class="card">
+      <h2>${safe(currentArticle.title)}</h2>
+      <p>Source: ${safe(currentArticle.source)}</p>
+      <p>Date: ${safe(currentArticle.date)}</p>
+      <hr>
+      <p>${safe(currentArticle.description)}</p>
+      <p><b>My Note:</b>
+      ${safe(notes[currentArticle.id] || "No notes added")}</p>
+      <button onclick="showScreen('notes')">
+        Add Personal Note
+      </button>
+      <button onclick="toggleCurrentBookmark()">
+        ${isSaved(currentArticle) ? "Remove Bookmark" : "Save Bookmark"}
+      </button>
+      <p>
+        <a href="${safe(currentArticle.url)}"
+           target="_blank" rel="noopener">
+           Read Full Article
+        </a>
+      </p>
+    </div>`;
+
+  showScreen("details");
+}
+
+function isSaved(article) {
+  return bookmarks.some(item => item.id === article.id);
+}
+
+function toggleBookmark(index) {
+  const article = articles[index];
+
+  if (isSaved(article)) {
+    bookmarks = bookmarks.filter(item => item.id !== article.id);
+  } else {
+    bookmarks.push(article);
+  }
+
+  localStorage.setItem("bookmarks", JSON.stringify(bookmarks));
+  displayNews();
+}
+
+function toggleCurrentBookmark() {
+  if (isSaved(currentArticle)) {
+    bookmarks = bookmarks.filter(
+      item => item.id !== currentArticle.id
+    );
+  } else {
+    bookmarks.push(currentArticle);
+  }
+
+  localStorage.setItem("bookmarks", JSON.stringify(bookmarks));
+  openDetailsFromCurrent();
+}
+
+function openDetailsFromCurrent() {
+  const article = currentArticle;
+  const index = articles.findIndex(a => a.id === article.id);
+
+  if (index >= 0) {
+    openDetails(index);
+  } else {
+    currentArticle = article;
+    document.getElementById("articleDetails").innerHTML = `
+      <div class="card">
+        <h2>${safe(article.title)}</h2>
+        <p>${safe(article.description)}</p>
+        <button onclick="showScreen('news')">Back to News</button>
+        <button onclick="toggleCurrentBookmark()">
+          Remove / Save Bookmark
+        </button>
+      </div>`;
+    showScreen("details");
+  }
+}
+
+function displayBookmarks() {
+  const list = document.getElementById("savedList");
+
+  if (bookmarks.length === 0) {
+    list.innerHTML = "<p>No saved articles yet.</p>";
+    return;
+  }
+
+  list.innerHTML = bookmarks.map((article, index) => `
+    <div class="card">
+      <h3>${safe(article.title)}</h3>
+      <p>${safe(article.source)}</p>
+      <button onclick="openSavedArticle(${index})">
+        Read More
+      </button>
+      <button onclick="removeBookmark(${index})">
+        Remove
+      </button>
+    </div>
+  `).join("");
+}
+
+function openSavedArticle(index) {
+  currentArticle = bookmarks[index];
+  openDetailsFromCurrent();
+}
+
+function removeBookmark(index) {
+  bookmarks.splice(index, 1);
+  localStorage.setItem("bookmarks", JSON.stringify(bookmarks));
+  displayBookmarks();
+}
+
+document.getElementById("noteForm")
+  .addEventListener("submit", function(event) {
+    event.preventDefault();
+
+    const note = document.getElementById("noteText").value.trim();
+
+    if (note.length < 5) {
+      alert("Please enter at least 5 characters.");
+      return;
+    }
+
+    notes[currentArticle.id] = note;
+    localStorage.setItem("personalNotes", JSON.stringify(notes));
+
+    document.getElementById("noteText").value = "";
+    alert("Personal note saved successfully!");
+
+    openDetailsFromCurrent();
+  });
+
+displayCategories();
+loadNews();
+</script>
+
+</body>
+</html>
